@@ -5,12 +5,18 @@ from selenium import webdriver
 import time
 import os
 from pathlib import Path
+from datetime import datetime
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton,
     QTextEdit, QMessageBox
+)
+from database import (
+    insert_li_person,
+    upsert_li_person_master,
+    prepare_profile_for_db
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QMutex
 from PyQt6.QtGui import QFont
@@ -180,16 +186,35 @@ class LinkedInScraperUI(QMainWindow):
         self.worker.result_signal.connect(self.handle_result)
         self.worker.finished_signal.connect(self.scraping_done)
         self.worker.start()
+        
+    def generate_task_id(self,prefix="LI_PERSON"):
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d%H%M%S")
+        milliseconds = f"{now.microsecond // 1000:03d}"
+        return f"{prefix}_{timestamp}{milliseconds}"
 
     def handle_result(self, data):
-        self.scraped_data_list.append(data)
-        name = data.get("basic_info", {}).get("name", "Unknown")
-        self.scraped_names.append(name)
-        self.result_box.setText("\n".join(self.scraped_names))
+        try:
+            profile = prepare_profile_for_db(data)
 
-        self.download_json.setEnabled(True)
-        self.download_excel.setEnabled(True)
-        self.download_csv.setEnabled(True)
+            task_id = self.generate_task_id()
+            
+            insert_li_person(profile,task_id)
+            upsert_li_person_master(profile,task_id)
+
+            self.scraped_data_list.append(data)
+            name = data.get("basic_info", {}).get("name", "Unknown")
+            self.scraped_names.append(name)
+            self.result_box.setText("\n".join(self.scraped_names))
+
+            self.download_json.setEnabled(True)
+            self.download_excel.setEnabled(True)
+            self.download_csv.setEnabled(True)
+
+            self.log("Saved to database ✔")
+
+        except Exception as e:
+            self.log(f"Database error ❌ {e}")
 
     def scraping_done(self):
         self.worker.quit()
@@ -223,9 +248,12 @@ class LinkedInScraperUI(QMainWindow):
                 "Location":basic.get("location",""),
                 "Connections":basic.get("connections",""),
                 "Last Activity":basic.get("last_activity",""),
+                "Job Title":first_exp.get("job_title",""),
+                "Profile URL":basic.get("profile_url",""),
+                "Job Title":basic.get("job_title",""),
                 "Company Name": first_exp.get("company_name", ""),
                 "Company Link": first_exp.get("company_link", ""),
-                "Location": first_exp.get("location", ""),
+                "Company Location": first_exp.get("location", ""),
                 "Work Mode": first_exp.get("work_mode", ""),
                 "Total Duration": first_exp.get("total_duration", first_exp.get("duration", ""),),
                 "Job Type": first_exp.get("job_type", ""),
@@ -256,9 +284,10 @@ class LinkedInScraperUI(QMainWindow):
                 "Location":basic.get("location",""),
                 "Connections":basic.get("connections",""),
                 "Last Activity":basic.get("last_activity",""),
+                "Job Title":first_exp.get("job_title",""),
                 "Company Name": first_exp.get("company_name", ""),
                 "Company Link": first_exp.get("company_link", ""),
-                "Location": first_exp.get("location", ""),
+                "Company Location": first_exp.get("location", ""),
                 "Work Mode": first_exp.get("work_mode", ""),
                 "Total Duration": first_exp.get("total_duration", first_exp.get("duration", ""),),
                 "Job Type": first_exp.get("job_type", ""),

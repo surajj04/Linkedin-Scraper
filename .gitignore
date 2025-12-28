@@ -1,3 +1,2 @@
 venv
-result.json
-linkedin_cookies.json
+__pycache__

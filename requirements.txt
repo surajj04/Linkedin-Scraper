@@ -1,5 +1,5 @@
 selenium
 pandas
 PyQt6
-requests
 openpyxl
+mysql-connector-python

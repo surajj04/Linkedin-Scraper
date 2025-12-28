@@ -91,6 +91,7 @@ def get_basic_info(driver):
     name = driver.find_element(By.XPATH,'//main/section[1]/div[2]/div[2]/div[1]/div[1]/span/a/h1').text
     connections_followers = driver.find_elements(By.XPATH,'//main/section[1]/div[2]/ul/li')
     head_line = driver.find_element(By.XPATH,'//main/section[1]/div[2]/div[2]/div[1]/div[2]').text
+    location = driver.find_element(By.XPATH,'//main/section[1]/div[2]/div[2]/div[2]/span[1]').text
     
     connections = "Not Found"
     followers = 'Not Found'
@@ -137,6 +138,8 @@ def get_basic_info(driver):
     details['headline'] = head_line
     details['about'] = about
     details['last_activity'] = last_activity
+    details['location'] = location
+    details['profile_url'] = driver.current_url
 
     return details
 
@@ -152,6 +155,7 @@ def extract_nested(driver,section_count,index):
     duration_ele = driver.find_elements(By.XPATH,f'//main/section[{section_count}]/div[3]/ul/li[{index}]/div/div[2]/div[1]/a/span/span[1]')
     location_ele = driver.find_elements(By.XPATH,f'//main/section[{section_count}]/div[3]/ul/li[{index}]/div/div[2]/div[1]/a/span[2]/span[1]')
     
+    job_title = "Not Found"
 
     work_mode = 'Not Found'
     location = 'Not Found'
@@ -198,6 +202,8 @@ def extract_nested(driver,section_count,index):
         for span_index in range(1,len(span_ele)+1):
             ele = driver.find_element(By.XPATH,f'//main/section[{section_count}]/div[3]/ul/li[{index}]/div/div[2]/div[2]/ul/li[{nested_index}]/div/div[2]/div[1]/a/span[{span_index}]/span[1]')
             
+            job_title = driver.find_element(By.XPATH,f'//main/section[{section_count}]/div[3]/ul/li[{index}]/div/div[2]/div[2]/ul/li[{nested_index}]/div/div[2]/div[1]/a/div/div/div/div/span[1]').text.strip()
+            
             if find_linkedin_dates(ele.text):
                 if '·' in ele.text:
                     tenurity = ele.text.split('·')[0]
@@ -216,6 +222,7 @@ def extract_nested(driver,section_count,index):
        
 
         experiences.append({
+            'job_title':job_title,
             'company_name':company_name,
             'company_link':company_link,
             'location':location,
@@ -319,7 +326,6 @@ def get_experience(driver):
         if check_nested:
             experiences.append(extract_nested(driver,section_count,index))
         else:
-            pass
             experiences.append(extract_single(driver,section_count,index))
     
     flattened = list(chain.from_iterable(
