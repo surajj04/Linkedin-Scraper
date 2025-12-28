@@ -19,9 +19,6 @@ from main import start_scrap
 
 LINKEDIN_URL = "https://www.linkedin.com/"
 
-# ====================================================
-# WORKER THREAD
-# ====================================================
 class ScraperWorker(QThread):
     log_signal = pyqtSignal(str)
     result_signal = pyqtSignal(dict)
@@ -47,9 +44,6 @@ class ScraperWorker(QThread):
             self.finished_signal.emit()
 
 
-# ====================================================
-# MAIN UI
-# ====================================================
 class LinkedInScraperUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -241,9 +235,6 @@ class LinkedInScraperUI(QMainWindow):
         event.accept()
 
 
-# ====================================================
-# ENTRY
-# ====================================================
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setFont(QFont("Arial", 10))
