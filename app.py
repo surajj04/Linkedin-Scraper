@@ -207,12 +207,69 @@ class LinkedInScraperUI(QMainWindow):
 
     def save_excel(self):
         path = self.save_dir / "Excel Files" / f"profiles_{int(time.time())}.xlsx"
-        pd.json_normalize(self.scraped_data_list).to_excel(path, index=False)
+        
+        rows = []
+        
+        for profile  in self.scraped_data_list:
+            basic = profile .get('basic_info',{})
+            experience_list = profile.get('experience',{})
+            skills = profile.get("skills", [])
+            
+            first_exp = experience_list[0] if experience_list else {}
+
+            rows.append({
+                "Name":basic.get("name",""),
+                "Headline":basic.get("headline",""),
+                "Location":basic.get("location",""),
+                "Connections":basic.get("connections",""),
+                "Last Activity":basic.get("last_activity",""),
+                "Company Name": first_exp.get("company_name", ""),
+                "Company Link": first_exp.get("company_link", ""),
+                "Location": first_exp.get("location", ""),
+                "Work Mode": first_exp.get("work_mode", ""),
+                "Total Duration": first_exp.get("total_duration", first_exp.get("duration", ""),),
+                "Job Type": first_exp.get("job_type", ""),
+                "Duration": first_exp.get("duration", ""),
+                "Tenurity": first_exp.get("tenurity", ""),
+                "Skills": ", ".join(skills),
+                "Experience": json.dumps(experience_list, ensure_ascii=False)
+                
+            })
+        df = pd.DataFrame(rows)
+        df.to_excel(path, index=False)
         self.log(f"Saved Excel → {path.name}")
 
     def save_csv(self):
         path = self.save_dir / "CSV Files" / f"profiles_{int(time.time())}.csv"
-        pd.json_normalize(self.scraped_data_list).to_csv(path, index=False)
+        rows = []
+        
+        for profile  in self.scraped_data_list:
+            basic = profile .get('basic_info',{})
+            experience_list = profile.get('experience',{})
+            skills = profile.get("skills", [])
+            
+            first_exp = experience_list[0] if experience_list else {}
+
+            rows.append({
+                "Name":basic.get("name",""),
+                "Headline":basic.get("headline",""),
+                "Location":basic.get("location",""),
+                "Connections":basic.get("connections",""),
+                "Last Activity":basic.get("last_activity",""),
+                "Company Name": first_exp.get("company_name", ""),
+                "Company Link": first_exp.get("company_link", ""),
+                "Location": first_exp.get("location", ""),
+                "Work Mode": first_exp.get("work_mode", ""),
+                "Total Duration": first_exp.get("total_duration", first_exp.get("duration", ""),),
+                "Job Type": first_exp.get("job_type", ""),
+                "Duration": first_exp.get("duration", ""),
+                "Tenurity": first_exp.get("tenurity", ""),
+                "Skills": ", ".join(skills),
+                "Experience": json.dumps(experience_list, ensure_ascii=False)
+                
+            })
+        df = pd.DataFrame(rows)
+        df.to_csv(path, index=False)
         self.log(f"Saved CSV → {path.name}")
 
     # ---------------- OPEN FOLDER ----------------

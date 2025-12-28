@@ -134,7 +134,7 @@ def get_basic_info(driver):
     details['name'] = name
     details['connections'] = connections
     details['followers'] = followers
-    details['head_line'] = head_line
+    details['headline'] = head_line
     details['about'] = about
     details['last_activity'] = last_activity
 
@@ -290,14 +290,14 @@ def extract_single(driver,section_count,index):
                 work_mode = 'Not Found'
 
 
-    experience['job_title'] = job_title 
-    experience['company_link'] = company_link 
-    experience['company_name'] = company_name
-    experience['job_type'] = job_type
-    experience['tenurity'] = tenurity 
-    experience['duration'] = duration 
-    experience['location'] = location
-    experience['work_mode'] = work_mode
+    experience['job_title'] = job_title.strip()
+    experience['company_link'] = company_link
+    experience['company_name'] = company_name.strip()
+    experience['job_type'] = job_type.strip()
+    experience['tenurity'] = tenurity.strip() 
+    experience['duration'] = duration.strip() 
+    experience['location'] = location.strip()
+    experience['work_mode'] = work_mode.strip()
 
 
     return experience 
