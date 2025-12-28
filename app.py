@@ -3,18 +3,19 @@ import json
 import pandas as pd
 from selenium import webdriver
 import time
+import os
+from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton,
-    QTextEdit, QMessageBox, QFileDialog
+    QTextEdit, QMessageBox
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QMutex
 from PyQt6.QtGui import QFont
 
-# ---------------- IMPORT YOUR SCRAPER ----------------
-from main import start_scrap  # your selenium scraping function
+from main import start_scrap
 
 LINKEDIN_URL = "https://www.linkedin.com/"
 
@@ -26,20 +27,23 @@ class ScraperWorker(QThread):
     result_signal = pyqtSignal(dict)
     finished_signal = pyqtSignal()
 
-    def __init__(self, driver, profile_url):
+    def __init__(self, driver, profile_url, mutex):
         super().__init__()
         self.driver = driver
         self.profile_url = profile_url
+        self.mutex = mutex
 
     def run(self):
+        self.mutex.lock()
         try:
             self.log_signal.emit(f"Scraping started: {self.profile_url}")
-            result = start_scrap(self.driver, self.profile_url)
-            self.result_signal.emit(result)
+            data = start_scrap(self.driver, self.profile_url)
+            self.result_signal.emit(data)
             self.log_signal.emit("Scraping completed ✔")
         except Exception as e:
-            self.log_signal.emit(f"Error: {str(e)}")
+            self.log_signal.emit(f"Error: {e}")
         finally:
+            self.mutex.unlock()
             self.finished_signal.emit()
 
 
@@ -49,25 +53,32 @@ class ScraperWorker(QThread):
 class LinkedInScraperUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LinkedIn Scraper")
+        self.setWindowTitle("LinkedIn Profile Scraper")
         self.setMinimumSize(1200, 650)
 
         self.driver = None
         self.worker = None
+        self.driver_mutex = QMutex()
         self.is_logged_in = False
 
         self.scraped_data_list = []
         self.scraped_names = []
 
+        self.save_dir = self.create_save_dir()
         self.init_ui()
-        # Don't initialize driver yet
 
-    # ------------------- UI -------------------
+    # ---------------- SAVE DIRECTORY ----------------
+    def create_save_dir(self):
+        base = Path.home() / "Desktop" / "LinkedIn Profile Scraper"
+        for f in ["JSON Files", "Excel Files", "CSV Files", "Profiles"]:
+            (base / f).mkdir(parents=True, exist_ok=True)
+        return base
+
+    # ---------------- UI ----------------
     def init_ui(self):
-        main_layout = QHBoxLayout()
-
-        # LEFT PANEL
+        main = QHBoxLayout()
         left = QVBoxLayout()
+        right = QVBoxLayout()
 
         title = QLabel("LinkedIn Profile Scraper")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -77,20 +88,23 @@ class LinkedInScraperUI(QMainWindow):
         self.url_input.setPlaceholderText("Paste LinkedIn profile URL")
 
         self.start_btn = QPushButton("Start Scraping")
-        self.start_btn.clicked.connect(self.start_scraping)
         self.start_btn.setEnabled(False)
+        self.start_btn.clicked.connect(self.start_scraping)
 
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setPlaceholderText("Logs will appear here...")
 
-        self.download_json_btn = QPushButton("Download JSON")
-        self.download_json_btn.clicked.connect(self.download_json)
-        self.download_json_btn.setEnabled(False)
+        # Download buttons
+        self.download_json = QPushButton("Download JSON")
+        self.download_excel = QPushButton("Download Excel")
+        self.download_csv = QPushButton("Download CSV")
 
-        self.download_excel_btn = QPushButton("Download Excel")
-        self.download_excel_btn.clicked.connect(self.download_excel)
-        self.download_excel_btn.setEnabled(False)
+        for btn in (self.download_json, self.download_excel, self.download_csv):
+            btn.setEnabled(False)
+
+        self.download_json.clicked.connect(self.save_json)
+        self.download_excel.clicked.connect(self.save_excel)
+        self.download_csv.clicked.connect(self.save_csv)
 
         left.addWidget(title)
         left.addWidget(QLabel("Profile URL"))
@@ -98,230 +112,141 @@ class LinkedInScraperUI(QMainWindow):
         left.addWidget(self.start_btn)
         left.addWidget(QLabel("Logs"))
         left.addWidget(self.log_box)
-        left.addWidget(self.download_json_btn)
-        left.addWidget(self.download_excel_btn)
+        left.addWidget(self.download_json)
+        left.addWidget(self.download_excel)
+        left.addWidget(self.download_csv)
 
         # RIGHT PANEL
-        right = QVBoxLayout()
         self.result_box = QTextEdit()
         self.result_box.setReadOnly(True)
         self.result_box.setPlaceholderText("Scraped profile names will appear here")
 
+        # 🔹 SAVE PATH LABEL
+        self.path_label = QLabel(
+            f"Files are automatically saved to:\n{self.save_dir}"
+        )
+        self.path_label.setWordWrap(True)
+        self.path_label.setStyleSheet(
+            "font-size:10px;color:#555;padding:8px;"
+            "background:#f2f2f2;border:1px solid #ddd;border-radius:5px;"
+        )
+
+        # 🔹 OPEN SAVE FOLDER BUTTON
+        self.open_folder_btn = QPushButton("📂 Open Save Folder")
+        self.open_folder_btn.clicked.connect(self.open_save_folder)
+
         right.addWidget(QLabel("Scraped Profiles"))
         right.addWidget(self.result_box)
+        right.addWidget(self.path_label)
+        right.addWidget(self.open_folder_btn)
 
-        main_layout.addLayout(left, 1)
-        main_layout.addLayout(right, 2)
+        main.addLayout(left, 1)
+        main.addLayout(right, 2)
 
         container = QWidget()
-        container.setLayout(main_layout)
+        container.setLayout(main)
         self.setCentralWidget(container)
 
+    # ---------------- STARTUP ----------------
     def showEvent(self, event):
-        """Called when the window is shown"""
         super().showEvent(event)
-        # Use a single-shot timer to delay driver initialization
-        QTimer.singleShot(500, self.init_driver_and_login_check)
+        QTimer.singleShot(500, self.init_driver)
 
-    # ------------------- DRIVER + LOGIN CHECK -------------------
-    def init_driver_and_login_check(self):
-        """Initialize the browser driver and check login status"""
-        # Update UI first
+    def init_driver(self):
         self.log("Initializing browser...")
-        self.log("Please wait while the browser opens...")
-        
-        # Force UI update
-        QApplication.processEvents()
-        
-        # Now initialize the driver
-        try:
-            self.driver = webdriver.Chrome()
-            self.driver.get(LINKEDIN_URL)
-            self.log("Browser opened successfully!")
-            self.log("Please login to LinkedIn in the browser window...")
-            
-            # Small delay to ensure browser is visible
-            time.sleep(1)
-            
-            # Now ask about login
-            reply = QMessageBox.question(
-                self,
-                "Login Required",
-                "A browser window has opened with LinkedIn.\n\n"
-                "1. Please login to LinkedIn in that browser\n"
-                "2. Then come back here and click 'Yes'\n\n"
-                "Click 'Yes' after you have logged in.\n"
-                "Click 'No' to cancel and close the app.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
-            )
+        self.driver = webdriver.Chrome()
+        self.driver.get(LINKEDIN_URL)
 
-            if reply == QMessageBox.StandardButton.Yes:
-                self.is_logged_in = True
-                self.start_btn.setEnabled(True)
-                self.log("✓ Login confirmed")
-                self.log("✓ Ready to scrape profiles")
-                self.log("→ Paste a LinkedIn profile URL above and click 'Start Scraping'")
-            else:
-                self.log("Login cancelled by user")
-                QMessageBox.information(
-                    self,
-                    "Closing",
-                    "Application will now close."
-                )
-                if self.driver:
-                    self.driver.quit()
-                self.close()
-                
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Browser Error",
-                f"Failed to open browser: {str(e)}\n\n"
-                "Make sure you have:\n"
-                "1. Chrome browser installed\n"
-                "2. ChromeDriver downloaded and in PATH\n"
-                "3. No other Chrome instances running"
-            )
-            self.log(f"✗ Error opening browser: {str(e)}")
-            self.log("Please check ChromeDriver installation and try again")
+        reply = QMessageBox.question(
+            self,
+            "Login Required",
+            "Please login to LinkedIn in the browser.\nClick YES after login.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
 
-    # ------------------- START SCRAPING -------------------
+        if reply == QMessageBox.StandardButton.Yes:
+            self.is_logged_in = True
+            self.start_btn.setEnabled(True)
+            self.log("Login confirmed ✔")
+        else:
+            self.close()
+
+    # ---------------- SCRAPING ----------------
     def start_scraping(self):
-        if not self.is_logged_in:
-            QMessageBox.warning(self, "Login Required", "Please login first.")
+        url = self.url_input.text().strip()
+        if not url:
+            QMessageBox.warning(self, "Error", "Enter profile URL")
             return
-
-        profile_url = self.url_input.text().strip()
-        if not profile_url:
-            QMessageBox.warning(self, "Missing URL", "Please enter profile URL")
-            return
-
-        if "linkedin.com/in/" not in profile_url:
-            reply = QMessageBox.question(
-                self,
-                "URL Warning",
-                "This doesn't look like a LinkedIn profile URL.\n"
-                "LinkedIn profiles usually contain 'linkedin.com/in/'.\n"
-                "Do you want to continue anyway?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.No:
-                return
 
         self.start_btn.setEnabled(False)
         self.url_input.clear()
 
-        self.worker = ScraperWorker(self.driver, profile_url)
+        self.worker = ScraperWorker(self.driver, url, self.driver_mutex)
         self.worker.log_signal.connect(self.log)
         self.worker.result_signal.connect(self.handle_result)
-        self.worker.finished_signal.connect(self.scraping_finished)
+        self.worker.finished_signal.connect(self.scraping_done)
         self.worker.start()
 
-    # ------------------- HANDLE RESULT -------------------
-    def handle_result(self, result):
-        self.scraped_data_list.append(result)
-
-        name = result.get("basic_info", {}).get("name", "Unknown")
+    def handle_result(self, data):
+        self.scraped_data_list.append(data)
+        name = data.get("basic_info", {}).get("name", "Unknown")
         self.scraped_names.append(name)
         self.result_box.setText("\n".join(self.scraped_names))
 
-        self.download_json_btn.setEnabled(True)
-        self.download_excel_btn.setEnabled(True)
+        self.download_json.setEnabled(True)
+        self.download_excel.setEnabled(True)
+        self.download_csv.setEnabled(True)
 
-    def scraping_finished(self):
+    def scraping_done(self):
+        self.worker.quit()
+        self.worker.wait()
+        self.worker = None
         self.start_btn.setEnabled(True)
-        self.log("✓ Ready for next URL")
+        self.log("Ready for next profile")
 
-    # ------------------- DOWNLOAD -------------------
-    def download_json(self):
-        if not self.scraped_data_list:
-            QMessageBox.warning(self, "No Data", "No scraped data to save.")
-            return
-            
-        path, _ = QFileDialog.getSaveFileName(
-            self, 
-            "Save JSON", 
-            f"linkedin_data_{time.strftime('%Y%m%d_%H%M%S')}.json", 
-            "JSON (*.json)"
-        )
-        if path:
-            try:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(self.scraped_data_list, f, indent=4, ensure_ascii=False)
-                self.log(f"✓ JSON saved: {path}")
-            except Exception as e:
-                QMessageBox.critical(self, "Save Error", f"Failed to save JSON: {str(e)}")
-                self.log(f"✗ Error saving JSON: {str(e)}")
+    # ---------------- SAVE FILES ----------------
+    def save_json(self):
+        path = self.save_dir / "JSON Files" / f"profiles_{int(time.time())}.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.scraped_data_list, f, indent=4, ensure_ascii=False)
+        self.log(f"Saved JSON → {path.name}")
 
-    def download_excel(self):
-        if not self.scraped_data_list:
-            QMessageBox.warning(self, "No Data", "No scraped data to save.")
-            return
-            
-        path, _ = QFileDialog.getSaveFileName(
-            self, 
-            "Save Excel", 
-            f"linkedin_data_{time.strftime('%Y%m%d_%H%M%S')}.xlsx", 
-            "Excel (*.xlsx)"
-        )
-        if path:
-            try:
-                df = pd.json_normalize(self.scraped_data_list)
-                df.to_excel(path, index=False)
-                self.log(f"✓ Excel saved: {path}")
-            except Exception as e:
-                QMessageBox.critical(self, "Save Error", f"Failed to save Excel: {str(e)}")
-                self.log(f"✗ Error saving Excel: {str(e)}")
+    def save_excel(self):
+        path = self.save_dir / "Excel Files" / f"profiles_{int(time.time())}.xlsx"
+        pd.json_normalize(self.scraped_data_list).to_excel(path, index=False)
+        self.log(f"Saved Excel → {path.name}")
 
-    # ------------------- LOG -------------------
+    def save_csv(self):
+        path = self.save_dir / "CSV Files" / f"profiles_{int(time.time())}.csv"
+        pd.json_normalize(self.scraped_data_list).to_csv(path, index=False)
+        self.log(f"Saved CSV → {path.name}")
+
+    # ---------------- OPEN FOLDER ----------------
+    def open_save_folder(self):
+        if sys.platform == "win32":
+            os.startfile(self.save_dir)
+        elif sys.platform == "darwin":
+            os.system(f'open "{self.save_dir}"')
+        else:
+            os.system(f'xdg-open "{self.save_dir}"')
+
+    # ---------------- LOG ----------------
     def log(self, msg):
-        timestamp = time.strftime("%H:%M:%S")
-        self.log_box.append(f"[{timestamp}] {msg}")
-        # Auto-scroll to bottom
-        scrollbar = self.log_box.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
-        # Force UI update
-        QApplication.processEvents()
+        self.log_box.append(f"[{time.strftime('%H:%M:%S')}] {msg}")
 
-    # ------------------- CLOSE -------------------
+    # ---------------- CLOSE ----------------
     def closeEvent(self, event):
-        # Ask for confirmation before closing
-        if self.driver and self.is_logged_in:
-            reply = QMessageBox.question(
-                self,
-                "Confirm Exit",
-                "Are you sure you want to exit?\nThe browser will be closed.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
-            )
-            
-            if reply == QMessageBox.StandardButton.No:
-                event.ignore()
-                return
-        
         if self.driver:
-            try:
-                self.log("Closing browser...")
-                self.driver.quit()
-            except:
-                pass
+            self.driver.quit()
         event.accept()
 
 
 # ====================================================
-# APP ENTRY
+# ENTRY
 # ====================================================
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    
-    # Set application-wide font
-    font = QFont("Arial", 10)
-    app.setFont(font)
-    
-    # Create and show window
+    app.setFont(QFont("Arial", 10))
     window = LinkedInScraperUI()
     window.show()
-    
-    # Start the application
     sys.exit(app.exec())
