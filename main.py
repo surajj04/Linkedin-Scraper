@@ -12,8 +12,6 @@ import re
 COOKIE_FILE = "linkedin_cookies.json"
 URL = "https://www.linkedin.com/"
 
-driver = webdriver.Chrome()
-driver.get(URL)
 
 
 
@@ -36,7 +34,7 @@ work_modes = [
 ]
 
 
-def load_cookies():
+def load_cookies(driver):
     if os.path.exists(COOKIE_FILE):
         with open(COOKIE_FILE, "r") as f:
             cookies = json.load(f)
@@ -54,7 +52,7 @@ def load_cookies():
             json.dump(cookies, f)
         print("[+] Cookies saved for next time!")
 
-def find_section_index(section_name):
+def find_section_index(driver,section_name):
 
     index = 2
     section_count = driver.find_elements(By.XPATH,'//main/section')
@@ -86,7 +84,8 @@ def find_linkedin_dates(text):
     return pattern.findall(text)
 
 
-def get_basic_info():
+
+def get_basic_info(driver):
     details = {}
 
     name = driver.find_element(By.XPATH,'//main/section[1]/div[2]/div[2]/div[1]/div[1]/span/a/h1').text
@@ -102,7 +101,7 @@ def get_basic_info():
             followers = ele.text
 
 
-    about_index = find_section_index('About')
+    about_index = find_section_index(driver,'About')
     about = 'Not Found'
     if  about_index != -1:
         about_ele = driver.find_element(By.XPATH,f'//main/section[{about_index}]/div[3]/div/div/div/span[1]')
@@ -110,7 +109,7 @@ def get_basic_info():
 
     
 
-    activity_index = find_section_index('Activity')
+    activity_index = find_section_index(driver,'Activity')
     last_activity = 'Not Found'
 
     if activity_index != -1:
@@ -142,7 +141,7 @@ def get_basic_info():
     return details
 
 
-def extract_nested(section_count,index):
+def extract_nested(driver,section_count,index):
     
     experiences = []
     
@@ -229,7 +228,7 @@ def extract_nested(section_count,index):
     return experiences
 
 
-def extract_single(section_count,index):
+def extract_single(driver,section_count,index):
     
 
     experience = {}
@@ -305,27 +304,23 @@ def extract_single(section_count,index):
 
 
 
-
-
-
-
-def get_experience():
+def get_experience(driver):
 
     time.sleep(4)
 
     experiences = []
 
-    section_count = find_section_index('Experience')
+    section_count = find_section_index(driver,'Experience')
 
     total_experience = driver.find_elements(By.XPATH,f'//main/section[{section_count}]/div[3]/ul/li')
 
     for index in range(1,len(total_experience)+1):
         check_nested = bool(driver.find_elements(By.XPATH, f'//main/section[{section_count}]/div[3]/ul/li[{index}]/div/div[2]/div[2]/ul/li[1]/span'))
         if check_nested:
-            experiences.append(extract_nested(section_count,index))
+            experiences.append(extract_nested(driver,section_count,index))
         else:
             pass
-            experiences.append(extract_single(section_count,index))
+            experiences.append(extract_single(driver,section_count,index))
     
     flattened = list(chain.from_iterable(
         item if isinstance(item, list) else [item]
@@ -334,27 +329,40 @@ def get_experience():
     
     return flattened
 
+def get_skills(driver):
+    skills = []
+    section_count = find_section_index(driver,  'Skills')
+    skills_ele = driver.find_elements(By.XPATH,f'//main/section[{section_count}]/div[3]/ul/li/div/div[2]/div[1]/a/div/div/div/div/span[1]')
+
+    for ele in skills_ele:
+        skills.append(ele.text.strip())
+    
+    return skills
+
+    
+    
+    
 
 
-def start_scrap():
-    load_cookies()
 
-    driver.get('ENTER PROFILE URL')
+def start_scrap(driver,profile_url):    
+    
+    # load_cookies(driver)
+    driver.get(profile_url)
 
-    basic_info = get_basic_info()   
-    experience = get_experience()
+    basic_info = get_basic_info(driver)   
+    experience = get_experience(driver)
+    skkills = get_skills(driver)
 
-    return {'basic_info':basic_info,'experience':experience}
-
-
-
-
-result = start_scrap()
+    return {'basic_info':basic_info,'experience':experience,'skills':skkills}
 
 
-df = pd.DataFrame([result])
 
-df.to_json('result.json', orient='records', indent=4)
 
-time.sleep(2)
-driver.quit()
+# result = start_scrap()
+
+
+# df = pd.DataFrame([result])
+
+# df.to_json('result.json', orient='records', indent=4)
+

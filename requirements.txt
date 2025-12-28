@@ -1,2 +1,5 @@
 selenium
 pandas
+PyQt6
+requests
+openpyxl
