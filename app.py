@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QMutex
 from PyQt6.QtGui import QFont
 
-from main import start_scrap
+from scraper import start_scrap
 
 LINKEDIN_URL = "https://www.linkedin.com/"
 
